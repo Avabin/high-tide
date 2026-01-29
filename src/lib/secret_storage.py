@@ -41,16 +41,20 @@ def load_client_id() -> Optional[str]:
     """Load the client ID from ~/.high-tide/auth.json if it exists.
 
     Returns:
-        Optional[str]: The client ID if found, None otherwise
+        Optional[str]: The client ID if found and valid, None otherwise
     """
     auth_file = get_auth_file_path()
     if not auth_file.exists():
         return None
 
     try:
-        with open(auth_file, "r") as f:
+        with open(auth_file, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("client_id")
+            client_id = data.get("client_id")
+            # Validate that client_id is a non-empty string
+            if client_id and isinstance(client_id, str) and client_id.strip():
+                return client_id.strip()
+            return None
     except Exception:
         logger.exception("Failed to load client ID from auth.json")
         return None
@@ -62,6 +66,9 @@ def save_client_id(client_id: str) -> None:
     Args:
         client_id: The client ID to save
     """
+    import os
+    import stat
+
     auth_file = get_auth_file_path()
 
     # Create the directory if it doesn't exist
@@ -71,7 +78,7 @@ def save_client_id(client_id: str) -> None:
     data: Dict[str, Any] = {}
     if auth_file.exists():
         try:
-            with open(auth_file, "r") as f:
+            with open(auth_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             logger.exception("Failed to read existing auth.json, will overwrite")
@@ -80,8 +87,10 @@ def save_client_id(client_id: str) -> None:
     data["client_id"] = client_id
 
     try:
-        with open(auth_file, "w") as f:
+        with open(auth_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        # Set restrictive permissions (owner read/write only)
+        os.chmod(auth_file, stat.S_IRUSR | stat.S_IWUSR)
         logger.info(f"Saved client ID to {auth_file}")
     except Exception:
         logger.exception("Failed to save client ID to auth.json")
@@ -146,7 +155,8 @@ class SecretStore:
         """Clear all stored authentication tokens from memory and keyring.
 
         Removes tokens from the internal dictionary and deletes them from
-        the system keyring/secret storage.
+        the system keyring/secret storage. Note: The client_id in
+        ~/.high-tide/auth.json is preserved for user convenience.
         """
         self.token_dictionary.clear()
         self.save()
