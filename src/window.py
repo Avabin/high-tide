@@ -177,15 +177,22 @@ class HighTideWindow(Adw.ApplicationWindow):
         self.artist_label.connect("activate-link", utils.open_uri)
         self.miniplayer_artist_label.connect("activate-link", utils.open_uri)
 
-        # Load client_id from auth.json if available
-        saved_client_id = load_client_id()
-        if saved_client_id:
-            logger.info("Using saved client_id from ~/.high-tide/auth.json")
+        # Load client_id: first check preferences, then auth.json, then use default
+        client_id_from_prefs = self.settings.get_string("client-id").strip()
+        if client_id_from_prefs:
+            logger.info("Using client_id from preferences")
             config = tidalapi.Config()
-            config.client_id = saved_client_id
+            config.client_id = client_id_from_prefs
             self.session = tidalapi.Session(config)
         else:
-            self.session = tidalapi.Session()
+            saved_client_id = load_client_id()
+            if saved_client_id:
+                logger.info("Using saved client_id from ~/.high-tide/auth.json")
+                config = tidalapi.Config()
+                config.client_id = saved_client_id
+                self.session = tidalapi.Session(config)
+            else:
+                self.session = tidalapi.Session()
 
         utils.session = self.session
         utils.navigation_view = self.navigation_view
@@ -280,6 +287,13 @@ class HighTideWindow(Adw.ApplicationWindow):
     def on_logged_in(self):
         """Handle successful user login"""
         logger.info("logged in")
+
+        # Populate client ID in preferences if not already set
+        if self.session.config.client_id:
+            current_pref_client_id = self.settings.get_string("client-id").strip()
+            if not current_pref_client_id:
+                self.settings.set_string("client-id", self.session.config.client_id)
+                logger.info("Populated client_id in preferences from session")
 
         page = HTGenericPage.new_from_function(utils.session.home).load()
         page.set_tag("home")

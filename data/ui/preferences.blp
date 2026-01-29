@@ -63,6 +63,14 @@ Adw.PreferencesDialog _preference_window {
           styles ["dim-label"]
         }
       }
+      Adw.EntryRow _client_id_row {
+        title: _("Client ID");
+        [suffix]
+        Gtk.Label {
+          label: _("Leave empty for automatic device auth.");
+          styles ["dim-label"]
+        }
+      }
     }
   }
 }

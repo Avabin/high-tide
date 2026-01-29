@@ -182,6 +182,12 @@ class HighTideApplication(Adw.Application):
                 "apply", self.on_auth_file_path_changed
             )
 
+            # Client ID configuration
+            self.client_id_row = builder.get_object("_client_id_row")
+            current_client_id = self.settings.get_string("client-id")
+            self.client_id_row.set_text(current_client_id)
+            self.client_id_row.connect("apply", self.on_client_id_changed)
+
             self.alsa_row = builder.get_object("_alsa_device_row")
 
             # Create a new label factory to just set max_width
@@ -277,6 +283,11 @@ class HighTideApplication(Adw.Application):
             logging.getLogger(__name__).warning(
                 f"Failed to set auth file path: {e}"
             )
+
+    def on_client_id_changed(self, widget: Any, *args) -> None:
+        """Handle client ID changes from preferences."""
+        new_client_id = widget.get_text().strip()
+        self.settings.set_string("client-id", new_client_id)
 
     def deactive_alsa_device_row(self, widget: Any, *args) -> None:
         alsa_used = widget.get_selected() == AudioSink.ALSA
