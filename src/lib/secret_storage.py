@@ -192,7 +192,7 @@ class SecretStore:
 
         Stores the session's token_type, access_token, and refresh_token
         in the system keyring for persistent authentication.
-        Also saves the client_id to ~/.high-tide/auth.json.
+        Also saves the client_id to ~/.high-tide/auth.json and to preferences.
         """
         token_type: str = self.session.token_type
         access_token: str = self.session.access_token
@@ -215,3 +215,11 @@ class SecretStore:
         # Save client_id to auth.json for easy user configuration
         if self.session.config.client_id:
             save_client_id(self.session.config.client_id)
+            # Also save to preferences if not already set
+            try:
+                settings = Gio.Settings.new("io.github.nokse22.high-tide")
+                if not settings.get_string("client-id").strip():
+                    settings.set_string("client-id", self.session.config.client_id)
+                    logger.info("Saved client_id to preferences")
+            except Exception:
+                logger.exception("Failed to save client_id to preferences")

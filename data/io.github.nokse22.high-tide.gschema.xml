@@ -55,5 +55,10 @@
       <summary>Auth File Path</summary>
       <description>Path to the authentication file for storing client ID. Leave empty to use the default location (~/.high-tide/auth.json). Supports tilde expansion for home directory.</description>
     </key>
+	  <key name="client-id" type="s">
+      <default>''</default>
+      <summary>Client ID</summary>
+      <description>TIDAL API client ID. Leave empty to use the default device authentication flow, which will automatically populate this field after successful login.</description>
+    </key>
 	</schema>
 </schemalist>
