@@ -25,7 +25,10 @@ import tidalapi
 from gi.repository import Adw, Gio, GLib, GObject, Gst, Gtk, Xdp
 from tidalapi import Quality
 
-from .lib import HTCache, PlayerObject, RepeatType, SecretStore, load_client_id, utils
+from .lib import (
+    HTCache, PlayerObject, RepeatType, SecretStore, lastfm_scrobbler,
+    load_client_id, utils
+)
 from .login import LoginDialog
 from .mpris import MPRIS
 from .pages import (HTAlbumPage, HTArtistPage, HTCollectionPage, HTExplorePage,
@@ -410,6 +413,9 @@ class HighTideWindow(Adw.ApplicationWindow):
 
         threading.Thread(target=self.th_add_lyrics_to_page, args=()).start()
 
+        # Update Last.fm now playing
+        lastfm_scrobbler.scrobbler.on_track_changed(track)
+
         self.control_bar_artist = track.artist
         self.update_slider()
 
@@ -681,6 +687,10 @@ class HighTideWindow(Adw.ApplicationWindow):
 
         self.time_played_label.set_label(utils.pretty_duration(position))
 
+        # Check Last.fm scrobble threshold
+        if end_value > 0 and position > 0:
+            lastfm_scrobbler.scrobbler.check_scrobble_threshold(position, end_value)
+
     def th_add_lyrics_to_page(self):
         try:
             lyrics = self.player_object.playing_track.lyrics()
@@ -766,6 +776,16 @@ class HighTideWindow(Adw.ApplicationWindow):
         if self.settings.get_boolean("discord-rpc") != state:
             self.settings.set_boolean("discord-rpc", state)
             self.player_object.set_discord_rpc(state)
+
+    def change_lastfm_enabled(self, state):
+        """Enable or disable Last.fm scrobbling.
+
+        Args:
+            state (bool): Whether to enable Last.fm scrobbling
+        """
+        if self.settings.get_boolean("lastfm-enabled") != state:
+            self.settings.set_boolean("lastfm-enabled", state)
+            lastfm_scrobbler.scrobbler.enabled = state
 
     #
     #   PAGES ACTIONS CALLBACKS

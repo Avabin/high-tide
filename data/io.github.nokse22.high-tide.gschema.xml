@@ -60,5 +60,21 @@
       <summary>Client ID</summary>
       <description>TIDAL API client ID. Leave empty to use the default device authentication flow, which will automatically populate this field after successful login.</description>
     </key>
+	  <key name="lastfm-enabled" type="b">
+      <default>false</default>
+      <summary>Last.fm Scrobbling</summary>
+      <description>Enable or disable Last.fm scrobbling of played tracks.</description>
+    </key>
+	  <key name="lastfm-scrobble-percentage" type="i">
+      <range min="10" max="100"/>
+      <default>50</default>
+      <summary>Last.fm Scrobble Percentage</summary>
+      <description>Percentage of a song that must be played before scrobbling to Last.fm. Valid range is 10-100.</description>
+    </key>
+	  <key name="lastfm-session-key" type="s">
+      <default>''</default>
+      <summary>Last.fm Session Key</summary>
+      <description>Last.fm authentication session key. This is populated automatically after logging in with Last.fm.</description>
+    </key>
 	</schema>
 </schemalist>
