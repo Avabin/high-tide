@@ -57,6 +57,11 @@ Adw.PreferencesDialog _preference_window {
       }
       Adw.EntryRow _auth_file_path_row {
         title: _("Auth File Path");
+        [suffix]
+        Gtk.Label {
+          label: _("Path to auth.json file. Supports ~ for home directory.");
+          styles ["dim-label"]
+        }
       }
     }
   }

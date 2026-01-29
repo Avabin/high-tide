@@ -42,8 +42,12 @@ def get_default_auth_file_path() -> Path:
 def get_auth_file_path() -> Path:
     """Get the path to the auth.json file from settings or default.
 
+    Reads the auth-file-path setting and returns the configured path.
+    If the setting is empty or not set, falls back to the default path.
+
     Returns:
-        Path: The configured auth file path, or default ~/.high-tide/auth.json
+        Path: The configured auth file path from settings,
+              or default ~/.high-tide/auth.json if not configured
     """
     try:
         settings = Gio.Settings.new("io.github.nokse22.high-tide")

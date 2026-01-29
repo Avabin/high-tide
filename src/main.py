@@ -174,9 +174,12 @@ class HighTideApplication(Adw.Application):
             current_path = self.settings.get_string("auth-file-path")
             if not current_path:
                 current_path = str(get_default_auth_file_path())
+            else:
+                # Expand tilde for consistent display
+                current_path = str(Path(current_path).expanduser())
             self.auth_file_path_row.set_text(current_path)
             self.auth_file_path_row.connect(
-                "changed", self.on_auth_file_path_changed
+                "apply", self.on_auth_file_path_changed
             )
 
             self.alsa_row = builder.get_object("_alsa_device_row")
@@ -256,11 +259,24 @@ class HighTideApplication(Adw.Application):
     def on_auth_file_path_changed(self, widget: Any, *args) -> None:
         """Handle auth file path changes and ensure directory exists."""
         new_path = widget.get_text().strip()
-        if new_path:
-            path = Path(new_path).expanduser()
+        if not new_path:
+            # Reset to default if empty
+            default_path = get_default_auth_file_path()
+            widget.set_text(str(default_path))
+            self.settings.set_string("auth-file-path", "")
+            return
+
+        try:
+            path = Path(new_path).expanduser().resolve()
             # Create directory if it doesn't exist
             path.parent.mkdir(parents=True, exist_ok=True)
             self.settings.set_string("auth-file-path", str(path))
+        except Exception as e:
+            # Log error but don't crash
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to set auth file path: {e}"
+            )
 
     def deactive_alsa_device_row(self, widget: Any, *args) -> None:
         alsa_used = widget.get_selected() == AudioSink.ALSA
