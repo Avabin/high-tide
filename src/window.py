@@ -288,6 +288,13 @@ class HighTideWindow(Adw.ApplicationWindow):
         """Handle successful user login"""
         logger.info("logged in")
 
+        # Populate client ID in preferences if not already set
+        if self.session.config.client_id:
+            current_pref_client_id = self.settings.get_string("client-id").strip()
+            if not current_pref_client_id:
+                self.settings.set_string("client-id", self.session.config.client_id)
+                logger.info("Populated client_id in preferences from session")
+
         page = HTGenericPage.new_from_function(utils.session.home).load()
         page.set_tag("home")
         self.navigation_view.replace([page])
