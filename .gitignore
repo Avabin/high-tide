@@ -2,6 +2,8 @@ _build/
 .flatpak/
 node_modules/
 .mypy_cache
+__pycache__/
+*.pyc
 
 # local flatpak build
 /repo
