@@ -18,13 +18,106 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import json
-from typing import Any, Dict, Tuple
+import os
+import stat
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 import tidalapi
-from gi.repository import Secret, Xdp
+from gi.repository import Gio, Secret, Xdp
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def get_default_auth_file_path() -> Path:
+    """Get the default path to the auth.json file.
+
+    Returns:
+        Path: The path to ~/.high-tide/auth.json
+    """
+    return Path.home() / ".high-tide" / "auth.json"
+
+
+def get_auth_file_path() -> Path:
+    """Get the path to the auth.json file from settings or default.
+
+    Reads the auth-file-path setting and returns the configured path.
+    If the setting is empty or not set, falls back to the default path.
+
+    Returns:
+        Path: The configured auth file path from settings,
+              or default ~/.high-tide/auth.json if not configured
+    """
+    try:
+        settings = Gio.Settings.new("io.github.nokse22.high-tide")
+        custom_path = settings.get_string("auth-file-path")
+        if custom_path and custom_path.strip():
+            return Path(custom_path.strip()).expanduser()
+    except Exception:
+        logger.exception("Failed to get auth file path from settings")
+
+    return get_default_auth_file_path()
+
+
+def load_client_id(auth_file_path: Optional[Path] = None) -> Optional[str]:
+    """Load the client ID from auth.json if it exists.
+
+    Args:
+        auth_file_path: Optional custom path to auth.json. If None, uses settings or default.
+
+    Returns:
+        Optional[str]: The client ID if found and valid, None otherwise
+    """
+    auth_file = auth_file_path if auth_file_path else get_auth_file_path()
+    if not auth_file.exists():
+        return None
+
+    try:
+        with open(auth_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            client_id = data.get("client_id")
+            # Validate that client_id is a non-empty string
+            if client_id and isinstance(client_id, str) and client_id.strip():
+                return client_id.strip()
+            return None
+    except Exception:
+        logger.exception("Failed to load client ID from auth.json")
+        return None
+
+
+def save_client_id(client_id: str, auth_file_path: Optional[Path] = None) -> None:
+    """Save the client ID to auth.json.
+
+    Args:
+        client_id: The client ID to save
+        auth_file_path: Optional custom path to auth.json. If None, uses settings or default.
+    """
+    auth_file = auth_file_path if auth_file_path else get_auth_file_path()
+
+    # Create the directory if it doesn't exist
+    auth_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing data if file exists
+    data: Dict[str, Any] = {}
+    if auth_file.exists():
+        try:
+            with open(auth_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            logger.exception("Failed to read existing auth.json, will overwrite")
+
+    # Update with new client_id
+    data["client_id"] = client_id
+
+    try:
+        with open(auth_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        # Set restrictive permissions (owner read/write only)
+        os.chmod(auth_file, stat.S_IRUSR | stat.S_IWUSR)
+        logger.info(f"Saved client ID to {auth_file}")
+    except Exception:
+        logger.exception("Failed to save client ID to auth.json")
 
 
 class SecretStore:
@@ -86,7 +179,8 @@ class SecretStore:
         """Clear all stored authentication tokens from memory and keyring.
 
         Removes tokens from the internal dictionary and deletes them from
-        the system keyring/secret storage.
+        the system keyring/secret storage. Note: The client_id in
+        ~/.high-tide/auth.json is preserved for user convenience.
         """
         self.token_dictionary.clear()
         self.save()
@@ -98,6 +192,7 @@ class SecretStore:
 
         Stores the session's token_type, access_token, and refresh_token
         in the system keyring for persistent authentication.
+        Also saves the client_id to ~/.high-tide/auth.json.
         """
         token_type: str = self.session.token_type
         access_token: str = self.session.access_token
@@ -116,3 +211,7 @@ class SecretStore:
         Secret.password_store_sync(
             self.schema, {}, Secret.COLLECTION_DEFAULT, self.key, json_data, None
         )
+
+        # Save client_id to auth.json for easy user configuration
+        if self.session.config.client_id:
+            save_client_id(self.session.config.client_id)

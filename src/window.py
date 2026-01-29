@@ -25,7 +25,7 @@ import tidalapi
 from gi.repository import Adw, Gio, GLib, GObject, Gst, Gtk, Xdp
 from tidalapi import Quality
 
-from .lib import HTCache, PlayerObject, RepeatType, SecretStore, utils
+from .lib import HTCache, PlayerObject, RepeatType, SecretStore, load_client_id, utils
 from .login import LoginDialog
 from .mpris import MPRIS
 from .pages import (HTAlbumPage, HTArtistPage, HTCollectionPage, HTExplorePage,
@@ -177,7 +177,15 @@ class HighTideWindow(Adw.ApplicationWindow):
         self.artist_label.connect("activate-link", utils.open_uri)
         self.miniplayer_artist_label.connect("activate-link", utils.open_uri)
 
-        self.session = tidalapi.Session()
+        # Load client_id from auth.json if available
+        saved_client_id = load_client_id()
+        if saved_client_id:
+            logger.info("Using saved client_id from ~/.high-tide/auth.json")
+            config = tidalapi.Config()
+            config.client_id = saved_client_id
+            self.session = tidalapi.Session(config)
+        else:
+            self.session = tidalapi.Session()
 
         utils.session = self.session
         utils.navigation_view = self.navigation_view

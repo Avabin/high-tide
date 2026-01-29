@@ -50,5 +50,10 @@
 	  <key name="alsa-device" type="s">
       <default>'default'</default>
     </key>
+	  <key name="auth-file-path" type="s">
+      <default>''</default>
+      <summary>Auth File Path</summary>
+      <description>Path to the authentication file for storing client ID. Leave empty to use the default location (~/.high-tide/auth.json). Supports tilde expansion for home directory.</description>
+    </key>
 	</schema>
 </schemalist>
