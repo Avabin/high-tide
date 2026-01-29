@@ -50,5 +50,8 @@
 	  <key name="alsa-device" type="s">
       <default>'default'</default>
     </key>
+	  <key name="auth-file-path" type="s">
+      <default>''</default>
+    </key>
 	</schema>
 </schemalist>

@@ -18,18 +18,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import tidalapi
-from gi.repository import Secret, Xdp
+from gi.repository import Gio, Secret, Xdp
 
 import logging
 logger = logging.getLogger(__name__)
 
 
-def get_auth_file_path() -> Path:
-    """Get the path to the auth.json file.
+def get_default_auth_file_path() -> Path:
+    """Get the default path to the auth.json file.
 
     Returns:
         Path: The path to ~/.high-tide/auth.json
@@ -37,13 +39,33 @@ def get_auth_file_path() -> Path:
     return Path.home() / ".high-tide" / "auth.json"
 
 
-def load_client_id() -> Optional[str]:
-    """Load the client ID from ~/.high-tide/auth.json if it exists.
+def get_auth_file_path() -> Path:
+    """Get the path to the auth.json file from settings or default.
+
+    Returns:
+        Path: The configured auth file path, or default ~/.high-tide/auth.json
+    """
+    try:
+        settings = Gio.Settings.new("io.github.nokse22.high-tide")
+        custom_path = settings.get_string("auth-file-path")
+        if custom_path and custom_path.strip():
+            return Path(custom_path.strip()).expanduser()
+    except Exception:
+        logger.exception("Failed to get auth file path from settings")
+
+    return get_default_auth_file_path()
+
+
+def load_client_id(auth_file_path: Optional[Path] = None) -> Optional[str]:
+    """Load the client ID from auth.json if it exists.
+
+    Args:
+        auth_file_path: Optional custom path to auth.json. If None, uses settings or default.
 
     Returns:
         Optional[str]: The client ID if found and valid, None otherwise
     """
-    auth_file = get_auth_file_path()
+    auth_file = auth_file_path if auth_file_path else get_auth_file_path()
     if not auth_file.exists():
         return None
 
@@ -60,16 +82,14 @@ def load_client_id() -> Optional[str]:
         return None
 
 
-def save_client_id(client_id: str) -> None:
-    """Save the client ID to ~/.high-tide/auth.json.
+def save_client_id(client_id: str, auth_file_path: Optional[Path] = None) -> None:
+    """Save the client ID to auth.json.
 
     Args:
         client_id: The client ID to save
+        auth_file_path: Optional custom path to auth.json. If None, uses settings or default.
     """
-    import os
-    import stat
-
-    auth_file = get_auth_file_path()
+    auth_file = auth_file_path if auth_file_path else get_auth_file_path()
 
     # Create the directory if it doesn't exist
     auth_file.parent.mkdir(parents=True, exist_ok=True)
