@@ -25,7 +25,10 @@ import tidalapi
 from gi.repository import Adw, Gio, GLib, GObject, Gst, Gtk, Xdp
 from tidalapi.media import Quality
 
-from .lib import HTCache, PlayerObject, RepeatType, SecretStore, utils
+from .lib import (
+    HTCache, PlayerObject, RepeatType, SecretStore, lastfm_scrobbler,
+    load_client_id, utils
+)
 from .login import LoginDialog
 from .mpris import MPRIS
 from .pages import (HTAlbumPage, HTArtistPage, HTCollectionPage, HTExplorePage,
@@ -177,7 +180,22 @@ class HighTideWindow(Adw.ApplicationWindow):
         self.artist_label.connect("activate-link", utils.open_uri)
         self.miniplayer_artist_label.connect("activate-link", utils.open_uri)
 
-        self.session = tidalapi.Session()
+        # Load client_id: first check preferences, then auth.json, then use default
+        client_id_from_prefs = self.settings.get_string("client-id").strip()
+        if client_id_from_prefs:
+            logger.info("Using client_id from preferences")
+            config = tidalapi.Config()
+            config.client_id = client_id_from_prefs
+            self.session = tidalapi.Session(config)
+        else:
+            saved_client_id = load_client_id()
+            if saved_client_id:
+                logger.info("Using saved client_id from ~/.high-tide/auth.json")
+                config = tidalapi.Config()
+                config.client_id = saved_client_id
+                self.session = tidalapi.Session(config)
+            else:
+                self.session = tidalapi.Session()
 
         utils.session = self.session
         utils.navigation_view = self.navigation_view
@@ -272,6 +290,13 @@ class HighTideWindow(Adw.ApplicationWindow):
     def on_logged_in(self):
         """Handle successful user login"""
         logger.info("logged in")
+
+        # Populate client ID in preferences if not already set
+        if self.session.config.client_id:
+            current_pref_client_id = self.settings.get_string("client-id").strip()
+            if not current_pref_client_id:
+                self.settings.set_string("client-id", self.session.config.client_id)
+                logger.info("Populated client_id in preferences from session")
 
         page = HTGenericPage.new_from_function(utils.session.home).load()
         page.set_tag("home")
@@ -387,6 +412,9 @@ class HighTideWindow(Adw.ApplicationWindow):
         ).start()
 
         threading.Thread(target=self.th_add_lyrics_to_page, args=()).start()
+
+        # Update Last.fm now playing
+        lastfm_scrobbler.scrobbler.on_track_changed(track)
 
         self.control_bar_artist = track.artist
         self.update_slider()
@@ -659,6 +687,10 @@ class HighTideWindow(Adw.ApplicationWindow):
 
         self.time_played_label.set_label(utils.pretty_duration(position))
 
+        # Check Last.fm scrobble threshold
+        if end_value > 0 and position > 0:
+            lastfm_scrobbler.scrobbler.check_scrobble_threshold(position, end_value)
+
     def th_add_lyrics_to_page(self):
         try:
             lyrics = self.player_object.playing_track.lyrics()
@@ -744,6 +776,16 @@ class HighTideWindow(Adw.ApplicationWindow):
         if self.settings.get_boolean("discord-rpc") != state:
             self.settings.set_boolean("discord-rpc", state)
             self.player_object.set_discord_rpc(state)
+
+    def change_lastfm_enabled(self, state):
+        """Enable or disable Last.fm scrobbling.
+
+        Args:
+            state (bool): Whether to enable Last.fm scrobbling
+        """
+        if self.settings.get_boolean("lastfm-enabled") != state:
+            self.settings.set_boolean("lastfm-enabled", state)
+            lastfm_scrobbler.scrobbler.enabled = state
 
     #
     #   PAGES ACTIONS CALLBACKS

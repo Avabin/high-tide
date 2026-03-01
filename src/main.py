@@ -18,13 +18,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import sys
+import threading
+import webbrowser
 from gettext import gettext as _
+from pathlib import Path
 from typing import Any, Callable, List
 
-from gi.repository import Adw, Gio, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
-from .lib import utils
+from .lib import lastfm_scrobbler, utils
 from .lib.player_object import AudioSink
+from .lib.secret_storage import get_default_auth_file_path
 from .window import HighTideWindow
 
 
@@ -56,6 +60,22 @@ class HighTideApplication(Adw.Application):
         self.preferences: Gtk.Window | None = None
 
         self.alsa_devices = utils.get_alsa_devices()
+
+        # Initialize Last.fm scrobbler with saved settings
+        self._lastfm_auth_token = None
+        self._init_lastfm_scrobbler()
+
+    def _init_lastfm_scrobbler(self) -> None:
+        """Initialize the Last.fm scrobbler with saved settings."""
+        scrobbler = lastfm_scrobbler.scrobbler
+        scrobbler.enabled = self.settings.get_boolean("lastfm-enabled")
+        scrobbler.scrobble_threshold = self.settings.get_int(
+            "lastfm-scrobble-percentage"
+        )
+
+        session_key = self.settings.get_string("lastfm-session-key")
+        if session_key:
+            scrobbler.set_session_key(session_key)
 
     def do_open(self, files: List[Gio.File], n_files: int, hint: str) -> None:
         self.win: HighTideWindow | None = self.props.active_window
@@ -167,6 +187,25 @@ class HighTideApplication(Adw.Application):
                 "notify::active", self.on_discord_rpc_changed
             )
 
+            # Auth file path configuration
+            self.auth_file_path_row = builder.get_object("_auth_file_path_row")
+            current_path = self.settings.get_string("auth-file-path")
+            if not current_path:
+                current_path = str(get_default_auth_file_path())
+            else:
+                # Expand tilde for consistent display
+                current_path = str(Path(current_path).expanduser())
+            self.auth_file_path_row.set_text(current_path)
+            self.auth_file_path_row.connect(
+                "apply", self.on_auth_file_path_changed
+            )
+
+            # Client ID configuration
+            self.client_id_row = builder.get_object("_client_id_row")
+            current_client_id = self.settings.get_string("client-id")
+            self.client_id_row.set_text(current_client_id)
+            self.client_id_row.connect("apply", self.on_client_id_changed)
+
             self.alsa_row = builder.get_object("_alsa_device_row")
 
             # Create a new label factory to just set max_width
@@ -214,6 +253,30 @@ class HighTideApplication(Adw.Application):
                 "notify::selected-item", self.deactive_alsa_device_row
             )
 
+            # Last.fm configuration
+            self.lastfm_enabled_row = builder.get_object("_lastfm_enabled_row")
+            self.lastfm_enabled_row.set_active(
+                self.settings.get_boolean("lastfm-enabled")
+            )
+            self.lastfm_enabled_row.connect(
+                "notify::active", self.on_lastfm_enabled_changed
+            )
+
+            self.lastfm_login_row = builder.get_object("_lastfm_login_row")
+            self.lastfm_login_button = builder.get_object("_lastfm_login_button")
+            self.lastfm_login_button.connect("clicked", self.on_lastfm_login_clicked)
+            self._update_lastfm_login_ui()
+
+            self.lastfm_scrobble_percentage_row = builder.get_object(
+                "_lastfm_scrobble_percentage_row"
+            )
+            self.lastfm_scrobble_percentage_row.set_value(
+                self.settings.get_int("lastfm-scrobble-percentage")
+            )
+            self.lastfm_scrobble_percentage_row.connect(
+                "notify::value", self.on_lastfm_scrobble_percentage_changed
+            )
+
             self.preferences = builder.get_object("_preference_window")
 
         self.preferences.present(self.win)
@@ -241,11 +304,165 @@ class HighTideApplication(Adw.Application):
     def on_discord_rpc_changed(self, widget: Any, *args) -> None:
         self.win.change_discord_rpc_enabled(widget.get_active())
 
+    def on_auth_file_path_changed(self, widget: Any, *args) -> None:
+        """Handle auth file path changes and ensure directory exists."""
+        new_path = widget.get_text().strip()
+        if not new_path:
+            # Reset to default if empty
+            default_path = get_default_auth_file_path()
+            widget.set_text(str(default_path))
+            self.settings.set_string("auth-file-path", "")
+            return
+
+        try:
+            path = Path(new_path).expanduser().resolve()
+            # Create directory if it doesn't exist
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.settings.set_string("auth-file-path", str(path))
+        except Exception as e:
+            # Log error but don't crash
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to set auth file path: {e}"
+            )
+
+    def on_client_id_changed(self, widget: Any, *args) -> None:
+        """Handle client ID changes from preferences."""
+        new_client_id = widget.get_text().strip()
+        self.settings.set_string("client-id", new_client_id)
+
     def deactive_alsa_device_row(self, widget: Any, *args) -> None:
         alsa_used = widget.get_selected() == AudioSink.ALSA
         self.alsa_row.set_sensitive(alsa_used)
         if not alsa_used:
             self.alsa_row.set_selected(0)
+
+    def on_lastfm_enabled_changed(self, widget: Any, *args) -> None:
+        """Handle Last.fm enable/disable toggle."""
+        enabled = widget.get_active()
+        self.settings.set_boolean("lastfm-enabled", enabled)
+        lastfm_scrobbler.scrobbler.enabled = enabled
+        self.win.change_lastfm_enabled(enabled)
+
+    def on_lastfm_scrobble_percentage_changed(self, widget: Any, *args) -> None:
+        """Handle Last.fm scrobble percentage changes."""
+        value = int(widget.get_value())
+        self.settings.set_int("lastfm-scrobble-percentage", value)
+        lastfm_scrobbler.scrobbler.scrobble_threshold = value
+
+    def on_lastfm_login_clicked(self, widget: Any, *args) -> None:
+        """Handle Last.fm login button click."""
+        scrobbler = lastfm_scrobbler.scrobbler
+
+        if scrobbler.is_authenticated:
+            # Log out
+            self._lastfm_logout()
+        else:
+            # Start login process
+            self._lastfm_start_login()
+
+    def _lastfm_start_login(self) -> None:
+        """Start the Last.fm web authentication process."""
+        scrobbler = lastfm_scrobbler.scrobbler
+
+        # Get auth URL and token
+        auth_url = scrobbler.get_auth_url()
+        if not auth_url:
+            utils.send_toast(_("Failed to start Last.fm authentication"), 3)
+            return
+
+        self._lastfm_auth_token = scrobbler.get_auth_token()
+        if not self._lastfm_auth_token:
+            utils.send_toast(_("Failed to get Last.fm auth token"), 3)
+            return
+
+        # Open browser for authentication
+        webbrowser.open(auth_url)
+
+        # Update button to show "Complete Login"
+        self.lastfm_login_button.set_label(_("Complete Login"))
+        self.lastfm_login_button.disconnect_by_func(self.on_lastfm_login_clicked)
+        self.lastfm_login_button.connect("clicked", self._lastfm_complete_login)
+        self.lastfm_login_row.set_subtitle(
+            _("Click 'Complete Login' after authorizing in browser")
+        )
+
+        utils.send_toast(
+            _("Please authorize in your browser, then click 'Complete Login'"), 5
+        )
+
+    def _lastfm_complete_login(self, widget: Any, *args) -> None:
+        """Complete the Last.fm authentication after user authorizes in browser."""
+        if not self._lastfm_auth_token:
+            utils.send_toast(_("No authentication in progress"), 3)
+            self._update_lastfm_login_ui()
+            return
+
+        # Complete auth in background thread
+        def complete_auth():
+            scrobbler = lastfm_scrobbler.scrobbler
+            session_key = scrobbler.complete_auth(self._lastfm_auth_token)
+
+            if session_key:
+                # Save session key and authenticate
+                GLib.idle_add(self._lastfm_auth_success, session_key)
+            else:
+                GLib.idle_add(self._lastfm_auth_failed)
+
+        threading.Thread(target=complete_auth).start()
+
+    def _lastfm_auth_success(self, session_key: str) -> None:
+        """Handle successful Last.fm authentication."""
+        self.settings.set_string("lastfm-session-key", session_key)
+        lastfm_scrobbler.scrobbler.set_session_key(session_key)
+        self._lastfm_auth_token = None
+        self._update_lastfm_login_ui()
+        utils.send_toast(_("Successfully logged in to Last.fm"), 3)
+
+    def _lastfm_auth_failed(self) -> None:
+        """Handle failed Last.fm authentication."""
+        self._lastfm_auth_token = None
+        self._update_lastfm_login_ui()
+        utils.send_toast(
+            _("Failed to authenticate with Last.fm. Please try again."), 3
+        )
+
+    def _lastfm_logout(self) -> None:
+        """Log out from Last.fm."""
+        self.settings.set_string("lastfm-session-key", "")
+        lastfm_scrobbler.scrobbler.disconnect()
+        self._update_lastfm_login_ui()
+        utils.send_toast(_("Logged out from Last.fm"), 3)
+
+    def _update_lastfm_login_ui(self) -> None:
+        """Update the Last.fm login row UI based on authentication state."""
+        scrobbler = lastfm_scrobbler.scrobbler
+
+        # Disconnect any existing handlers
+        try:
+            self.lastfm_login_button.disconnect_by_func(self.on_lastfm_login_clicked)
+        except TypeError:
+            pass
+        try:
+            self.lastfm_login_button.disconnect_by_func(self._lastfm_complete_login)
+        except TypeError:
+            pass
+
+        # Reconnect the main handler
+        self.lastfm_login_button.connect("clicked", self.on_lastfm_login_clicked)
+
+        if scrobbler.is_authenticated:
+            username = scrobbler.get_username()
+            if username:
+                self.lastfm_login_row.set_subtitle(
+                    _("Logged in as {}").format(username)
+                )
+            else:
+                self.lastfm_login_row.set_subtitle(_("Logged in"))
+            self.lastfm_login_button.set_label(_("Log Out"))
+        else:
+            self.lastfm_login_row.set_subtitle(_("Not logged in"))
+            self.lastfm_login_button.set_label(_("Log In"))
 
     def create_action(
         self, name: str, callback: Callable, shortcuts: List[str] | None = None

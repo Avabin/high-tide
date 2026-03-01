@@ -55,6 +55,55 @@ Adw.PreferencesDialog _preference_window {
       Adw.SwitchRow _discord_rpc_row {
         title: _("Enable Discord Rich Presence");
       }
+      Adw.EntryRow _auth_file_path_row {
+        title: _("Auth File Path");
+        [suffix]
+        Gtk.Label {
+          label: _("Path to auth.json file. Supports ~ for home directory.");
+          styles ["dim-label"]
+        }
+      }
+      Adw.EntryRow _client_id_row {
+        title: _("Client ID");
+        [suffix]
+        Gtk.Label {
+          label: _("Leave empty for automatic device auth.");
+          styles ["dim-label"]
+        }
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Last.fm");
+      description: _("Scrobble played songs to Last.fm");
+
+      Adw.SwitchRow _lastfm_enabled_row {
+        title: _("Enable Last.fm Scrobbling");
+        subtitle: _("Send played tracks to your Last.fm account");
+      }
+
+      Adw.ActionRow _lastfm_login_row {
+        title: _("Last.fm Account");
+        subtitle: _("Not logged in");
+
+        [suffix]
+        Gtk.Button _lastfm_login_button {
+          label: _("Log In");
+          valign: center;
+        }
+      }
+
+      Adw.SpinRow _lastfm_scrobble_percentage_row {
+        title: _("Scrobble After");
+        subtitle: _("Percentage of song played before scrobbling");
+        adjustment: Gtk.Adjustment {
+          lower: 10;
+          upper: 100;
+          step-increment: 5;
+          page-increment: 10;
+          value: 50;
+        };
+      }
     }
   }
 }
